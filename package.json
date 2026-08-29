@@ -1,0 +1,24 @@
+{
+  "name": "team-drop-words",
+  "version": "1.0.0",
+  "description": "실시간 팀 타자 대결 게임",
+  "main": "index.js",
+  "scripts": {
+    "start": "node server/index.js",
+    "tunnel": "node scripts/tunnel.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "express": "^5.2.1",
+    "qrcode": "^1.5.4",
+    "selfsigned": "^5.5.0",
+    "socket.io": "^4.8.3"
+  },
+  "devDependencies": {
+    "puppeteer-core": "^25.5.0",
+    "socket.io-client": "^4.8.3"
+  }
+}

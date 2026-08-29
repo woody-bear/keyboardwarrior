@@ -1,0 +1,407 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>단어 테마 관리 — Team Drop Words</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⌨️</text></svg>" />
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  min-height: 100vh;
+  background: radial-gradient(1200px 600px at 50% -10%, #16204a 0%, #070a16 60%);
+  color: #e8ecf8;
+  font-family: -apple-system, BlinkMacSystemFont, 'Pretendard', 'Apple SD Gothic Neo',
+    'Noto Sans KR', system-ui, sans-serif;
+  padding: 24px 18px 60px;
+}
+
+.wrap { max-width: 860px; margin: 0 auto; }
+
+header { display: flex; align-items: baseline; gap: 14px; margin-bottom: 6px; }
+h1 { font-size: 24px; font-weight: 800; }
+header a { color: #7cf5c4; font-size: 13px; text-decoration: none; }
+header a:hover { text-decoration: underline; }
+
+.desc { color: #8592b5; font-size: 13px; margin-bottom: 22px; }
+
+.card {
+  border: 1px solid #1e2946;
+  border-radius: 16px;
+  background: rgba(11, 17, 34, 0.75);
+  padding: 16px 18px;
+  margin-bottom: 14px;
+}
+
+.card.active-theme { border-color: #7cf5c4; box-shadow: 0 0 0 3px rgba(124, 245, 196, 0.1); }
+
+.card-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.t-name { font-size: 17px; font-weight: 800; }
+.badge {
+  font-size: 10.5px; font-weight: 700; padding: 2px 8px; border-radius: 999px;
+  background: #1c2748; color: #8592b5;
+}
+.badge.custom { background: rgba(255, 214, 107, 0.14); color: #ffd66b; }
+.badge.on { background: rgba(124, 245, 196, 0.16); color: #7cf5c4; }
+.count { font-size: 12px; color: #8592b5; }
+
+.card-head .grow { flex: 1; }
+
+button {
+  font-family: inherit; cursor: pointer;
+  border: 1px solid #1e2946; border-radius: 8px;
+  background: #16203c; color: #e8ecf8;
+  padding: 6px 14px; font-size: 12.5px; font-weight: 600;
+  transition: background 0.15s;
+}
+button:hover { background: #21305a; }
+
+button.pick { border-color: rgba(124, 245, 196, 0.5); color: #7cf5c4; background: rgba(124, 245, 196, 0.08); }
+button.pick:hover { background: rgba(124, 245, 196, 0.18); }
+button.pick:disabled { opacity: 0.45; cursor: default; }
+
+button.danger { border-color: rgba(255, 77, 109, 0.4); color: #ff8ea3; background: transparent; }
+button.danger:hover { background: rgba(255, 77, 109, 0.12); }
+
+.words { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
+
+.chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 4px 8px 4px 11px;
+  border: 1px solid #263256; border-radius: 999px;
+  background: #101731; font-size: 13px;
+}
+.chip i {
+  font-style: normal; cursor: pointer; color: #58648c;
+  font-size: 14px; line-height: 1; padding: 1px 3px; border-radius: 50%;
+}
+.chip i:hover { color: #ff8ea3; }
+.no-words { color: #58648c; font-size: 13px; margin-top: 12px; }
+
+.add-row { display: flex; gap: 8px; margin-top: 12px; }
+.add-row input {
+  flex: 1; min-width: 0;
+  padding: 8px 12px;
+  border: 1px solid #1e2946; border-radius: 9px;
+  background: #0b1122; color: #e8ecf8;
+  font-size: 14px; outline: none;
+}
+.add-row input:focus { border-color: #7cf5c4; }
+
+/* 새 테마 만들기 */
+.new-card { border-style: dashed; }
+.new-card h2 { font-size: 15px; font-weight: 700; margin-bottom: 12px; color: #b9c3e0; }
+.new-card .add-row { margin-top: 8px; }
+.new-card .hint { font-size: 11.5px; color: #58648c; margin-top: 8px; }
+
+/* 게임 설정 슬라이더 */
+.tuning-title { font-size: 15px; font-weight: 700; margin-bottom: 14px; color: #b9c3e0; }
+
+.slider-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 12px;
+}
+
+.s-label { width: 74px; font-size: 13.5px; color: #b9c3e0; flex: none; }
+
+.slider-row input[type="range"] {
+  flex: 1;
+  accent-color: #7cf5c4;
+  cursor: pointer;
+}
+
+.slider-row b {
+  width: 52px;
+  text-align: right;
+  font-size: 14px;
+  color: #7cf5c4;
+  flex: none;
+}
+
+.tuning-hint { font-size: 11.5px; color: #58648c; }
+
+.toast {
+  position: fixed; left: 50%; bottom: 30px; transform: translateX(-50%);
+  background: #101731; border: 1px solid #263256; border-radius: 10px;
+  padding: 10px 18px; font-size: 13.5px;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.5);
+}
+.toast.err { border-color: rgba(255, 77, 109, 0.5); color: #ff8ea3; }
+[hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>단어 테마 관리</h1>
+    <a href="/">← 게임으로 돌아가기</a>
+  </header>
+  <p class="desc">
+    테마를 선택하면 게임에서 떨어지는 단어가 그 테마의 단어로 바뀝니다.
+    선택은 즉시 모든 화면에 적용됩니다.
+  </p>
+
+  <div class="card">
+    <h2 class="tuning-title">게임 설정</h2>
+    <div class="slider-row">
+      <span class="s-label">단어 양</span>
+      <input type="range" id="amountRange" min="30" max="200" step="10" value="100" />
+      <b id="amountVal">100%</b>
+    </div>
+    <div class="slider-row">
+      <span class="s-label">낙하 속도</span>
+      <input type="range" id="speedRange" min="50" max="200" step="10" value="100" />
+      <b id="speedVal">100%</b>
+    </div>
+    <div class="slider-row">
+      <span class="s-label">게임 시간</span>
+      <input type="range" id="roundRange" min="60" max="300" step="30" value="150" />
+      <b id="roundVal">2:30</b>
+    </div>
+    <p class="tuning-hint">움직이면 즉시 게임에 적용됩니다. 기본값: 양 100% · 속도 100% · 2:30</p>
+  </div>
+
+  <div id="list"></div>
+
+  <div class="card new-card">
+    <h2>새 테마 만들기</h2>
+    <div class="add-row">
+      <input id="newName" type="text" maxlength="10" placeholder="테마 이름 (예: 동물, 우리반 이름)" />
+    </div>
+    <div class="add-row">
+      <input id="newWords" type="text" placeholder="단어들 (쉼표로 구분: 사자, 코끼리, 기린)" />
+      <button id="createBtn" class="pick">만들기</button>
+    </div>
+    <p class="hint">단어는 테마당 최대 200개, 한 단어 최대 12자입니다.</p>
+  </div>
+</div>
+
+<div class="toast" id="toast" hidden></div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+let data = { active: null, themes: [] };
+let toastTimer = null;
+
+function toast(msg, isErr) {
+  const el = $('toast');
+  el.textContent = msg;
+  el.className = 'toast' + (isErr ? ' err' : '');
+  el.hidden = false;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { el.hidden = true; }, 2400);
+}
+
+async function api(path, body) {
+  const res = await fetch(path, {
+    method: body ? 'POST' : 'GET',
+    headers: body ? { 'content-type': 'application/json' } : undefined,
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(json.error || '요청 실패');
+  return json;
+}
+
+async function reload() {
+  data = await api('/api/keywords');
+  render();
+  applySettings();
+}
+
+/* ------------------------------ 게임 설정 ------------------------------ */
+
+const fmtTime = (sec) => `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`;
+
+function applySettings() {
+  if (!data.settings) return;
+  $('amountRange').value = Math.round(data.settings.amount * 100);
+  $('speedRange').value = Math.round(data.settings.speed * 100);
+  $('roundRange').value = data.settings.roundSec;
+  $('amountVal').textContent = Math.round(data.settings.amount * 100) + '%';
+  $('speedVal').textContent = Math.round(data.settings.speed * 100) + '%';
+  $('roundVal').textContent = fmtTime(data.settings.roundSec);
+}
+
+let tuningTimer = null;
+
+function tuningChanged() {
+  $('amountVal').textContent = $('amountRange').value + '%';
+  $('speedVal').textContent = $('speedRange').value + '%';
+  $('roundVal').textContent = fmtTime(Number($('roundRange').value));
+
+  clearTimeout(tuningTimer);
+  tuningTimer = setTimeout(async () => {
+    try {
+      const res = await api('/api/keywords/settings', {
+        amount: Number($('amountRange').value) / 100,
+        speed: Number($('speedRange').value) / 100,
+        roundSec: Number($('roundRange').value),
+      });
+      data.settings = res.settings;
+    } catch (e) { toast(e.message, true); }
+  }, 350);
+}
+
+$('amountRange').addEventListener('input', tuningChanged);
+$('speedRange').addEventListener('input', tuningChanged);
+$('roundRange').addEventListener('input', tuningChanged);
+
+function themeCard(theme) {
+  const isActive = data.active === theme.name;
+  const card = document.createElement('div');
+  card.className = 'card' + (isActive ? ' active-theme' : '');
+
+  const head = document.createElement('div');
+  head.className = 'card-head';
+
+  const name = document.createElement('span');
+  name.className = 't-name';
+  name.textContent = theme.name;
+  head.appendChild(name);
+
+  const badge = document.createElement('span');
+  badge.className = 'badge' + (theme.builtin ? '' : ' custom');
+  badge.textContent = theme.builtin ? '기본 제공' : '커스텀';
+  head.appendChild(badge);
+
+  if (isActive) {
+    const on = document.createElement('span');
+    on.className = 'badge on';
+    on.textContent = '사용 중';
+    head.appendChild(on);
+  }
+
+  const count = document.createElement('span');
+  count.className = 'count';
+  count.textContent = theme.words.length + '개 단어';
+  head.appendChild(count);
+
+  const grow = document.createElement('span');
+  grow.className = 'grow';
+  head.appendChild(grow);
+
+  const pick = document.createElement('button');
+  pick.className = 'pick';
+  pick.textContent = isActive ? '사용 중' : '이 테마 사용';
+  pick.disabled = isActive;
+  pick.onclick = () => setActive(theme.name);
+  head.appendChild(pick);
+
+  if (!theme.builtin) {
+    const del = document.createElement('button');
+    del.className = 'danger';
+    del.textContent = '삭제';
+    del.onclick = async () => {
+      if (!confirm('"' + theme.name + '" 테마를 삭제할까요?')) return;
+      try { await api('/api/keywords/delete', { theme: theme.name }); await reload(); }
+      catch (e) { toast(e.message, true); }
+    };
+    head.appendChild(del);
+  }
+
+  card.appendChild(head);
+
+  if (theme.words.length) {
+    const words = document.createElement('div');
+    words.className = 'words';
+    for (const w of theme.words) {
+      const chip = document.createElement('span');
+      chip.className = 'chip';
+      const label = document.createElement('span');
+      label.textContent = w;
+      chip.appendChild(label);
+      const x = document.createElement('i');
+      x.textContent = '×';
+      x.title = '삭제';
+      x.onclick = async () => {
+        try { await api('/api/keywords/remove-word', { theme: theme.name, word: w }); await reload(); }
+        catch (e) { toast(e.message, true); }
+      };
+      chip.appendChild(x);
+      words.appendChild(chip);
+    }
+    card.appendChild(words);
+  } else {
+    const empty = document.createElement('p');
+    empty.className = 'no-words';
+    empty.textContent = '아직 단어가 없습니다. 아래에서 추가해 주세요.';
+    card.appendChild(empty);
+  }
+
+  const row = document.createElement('div');
+  row.className = 'add-row';
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.placeholder = '단어 추가 (쉼표로 여러 개 가능)';
+  const btn = document.createElement('button');
+  btn.textContent = '추가';
+  const submit = async () => {
+    const words = input.value.split(',').map((s) => s.trim()).filter(Boolean);
+    if (!words.length) return;
+    try {
+      await api('/api/keywords/words', { theme: theme.name, words });
+      input.value = '';
+      await reload();
+    } catch (e) { toast(e.message, true); }
+  };
+  btn.onclick = submit;
+  input.addEventListener('keyup', (e) => { if (e.key === 'Enter') submit(); });
+  row.appendChild(input);
+  row.appendChild(btn);
+  card.appendChild(row);
+
+  return card;
+}
+
+function render() {
+  const list = $('list');
+  list.innerHTML = '';
+
+  // 기본(난이도 진행형) 선택 카드
+  const base = document.createElement('div');
+  base.className = 'card' + (data.active ? '' : ' active-theme');
+  const head = document.createElement('div');
+  head.className = 'card-head';
+  head.innerHTML = '<span class="t-name">기본</span><span class="badge">난이도 진행</span>'
+    + (data.active ? '' : '<span class="badge on">사용 중</span>')
+    + '<span class="count">짧은 낱말 → 긴 낱말 → 단문 순서로 어려워집니다</span><span class="grow"></span>';
+  const pick = document.createElement('button');
+  pick.className = 'pick';
+  pick.textContent = data.active ? '이 테마 사용' : '사용 중';
+  pick.disabled = !data.active;
+  pick.onclick = () => setActive(null);
+  head.appendChild(pick);
+  base.appendChild(head);
+  list.appendChild(base);
+
+  for (const theme of data.themes) list.appendChild(themeCard(theme));
+}
+
+async function setActive(name) {
+  try {
+    await api('/api/keywords/active', { theme: name });
+    toast(name ? '"' + name + '" 테마가 적용되었습니다' : '기본 단어로 돌아갑니다');
+    await reload();
+  } catch (e) { toast(e.message, true); }
+}
+
+$('createBtn').addEventListener('click', async () => {
+  const name = $('newName').value.trim();
+  const words = $('newWords').value.split(',').map((s) => s.trim()).filter(Boolean);
+  try {
+    await api('/api/keywords', { name, words });
+    $('newName').value = '';
+    $('newWords').value = '';
+    toast('"' + name + '" 테마를 만들었습니다');
+    await reload();
+  } catch (e) { toast(e.message, true); }
+});
+
+reload().catch(() => toast('목록을 불러오지 못했습니다', true));
+</script>
+</body>
+</html>

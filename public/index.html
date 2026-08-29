@@ -1,0 +1,201 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+<meta name="theme-color" content="#070a16" />
+<title>Team Drop Words — 실시간 팀 타자 대결</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⌨️</text></svg>" />
+<link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+
+<header class="topbar">
+  <!-- PC 플레이 화면 상단: 공용 QR + 공유 링크 (팀은 접속 후 선택) -->
+  <section class="join-card" id="joinCard">
+    <div class="join-row">
+      <div class="qr-box"><img id="qrMain" alt="참여 QR" /></div>
+      <div class="join-info">
+        <p class="join-title">QR을 스캔해 참여하세요</p>
+        <p class="join-sub">로그인 없음 · 접속 후 팀 선택</p>
+        <div class="join-link">
+          <code id="joinUrl">불러오는 중…</code>
+          <button id="copyBtn" type="button">링크 복사</button>
+        </div>
+        <div class="join-add">
+          <input id="customWord" type="text" maxlength="10" autocomplete="off"
+            placeholder="단어를 직접 추가해 떨어뜨리기" />
+          <button id="customAdd" type="button">추가</button>
+          <a class="join-theme" href="/keyword" title="단어 테마 관리">테마</a>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="scoreboard">
+    <div class="team team-red">
+      <span class="team-name">RED</span>
+      <span class="team-score" id="scoreRed">0</span>
+      <span class="team-count" id="countRed">0명</span>
+    </div>
+
+    <div class="center-meta">
+      <div class="timer" id="timer">--:--</div>
+      <div class="lives" id="lives"></div>
+      <div class="meta-sub">
+        <span id="phaseLabel">연결 중</span>
+        <span class="dot-sep">·</span>
+        <span><b id="playerCount">0</b>명 접속</span>
+      </div>
+    </div>
+
+    <div class="team team-blue">
+      <span class="team-name">BLUE</span>
+      <span class="team-score" id="scoreBlue">0</span>
+      <span class="team-count" id="countBlue">0명</span>
+    </div>
+  </section>
+</header>
+
+<main class="stage">
+  <!-- 프로필별 실시간 득점 비중 바 -->
+  <div class="scorebars" id="scoreBars"></div>
+
+  <canvas id="canvas"></canvas>
+
+  <!-- 타이핑 타임(10초) 안내 배너 -->
+  <div class="modebar" id="modeBar" hidden>⌨️ 타이핑 타임! 단어를 입력하세요 <b id="modeBarSec">10</b>초</div>
+
+  <aside class="roster">
+    <h2>실시간 순위</h2>
+    <ul id="rosterList"></ul>
+  </aside>
+
+  <div class="combo" id="combo" hidden><b id="comboNum">2</b><span>COMBO</span></div>
+
+  <div class="overlay" id="overlay" hidden>
+    <div class="overlay-inner">
+      <p class="overlay-title" id="overlayTitle">대기 중</p>
+      <p class="overlay-sub" id="overlaySub">QR을 스캔하면 바로 시작됩니다</p>
+
+      <!-- 라운드 결과: 팀 점수 비교 막대 + 참가자 전원 득점 리스트 -->
+      <div class="result" id="result" hidden>
+        <div class="result-bar">
+          <div class="bar-side bar-red">
+            <span class="bar-label">RED</span>
+            <span class="bar-value" id="barRed">0</span>
+          </div>
+          <div class="bar-track">
+            <div class="bar-fill-red" id="barFillRed"></div>
+            <div class="bar-fill-blue" id="barFillBlue"></div>
+          </div>
+          <div class="bar-side bar-blue">
+            <span class="bar-label">BLUE</span>
+            <span class="bar-value" id="barBlue">0</span>
+          </div>
+        </div>
+
+        <p class="result-meta" id="resultMeta"></p>
+
+        <div class="result-head">
+          <span class="col-rank">순위</span>
+          <span class="col-name">닉네임</span>
+          <span class="col-num c-cpm">타/분</span>
+          <span class="col-num c-acc">정확도</span>
+          <span class="col-num c-hits">맞힘</span>
+          <span class="col-num c-combo">콤보</span>
+          <span class="col-score">점수</span>
+        </div>
+        <ol class="result-list" id="resultList"></ol>
+
+        <p class="result-best" id="resultBest"></p>
+      </div>
+
+      <p class="overlay-countdown" id="overlayCountdown"></p>
+      <button type="button" class="overlay-restart" id="restartBtn" hidden>다시 시작</button>
+    </div>
+  </div>
+
+  <div class="toast" id="toast" hidden></div>
+
+  <!-- 공용 링크로 들어온 사람에게 한 번 보여주는 팀 선택 -->
+  <div class="teampick" id="teamPick" hidden>
+    <div class="teampick-box">
+      <p class="teampick-title">어느 팀으로 참여할까요?</p>
+      <p class="teampick-sub" id="teamPickSub">인원이 적은 팀을 고르면 더 팽팽해집니다</p>
+      <div class="teampick-btns">
+        <button type="button" class="tp-red" data-pick="red">
+          <b>RED</b><span id="tpRed">0명</span>
+        </button>
+        <button type="button" class="tp-blue" data-pick="blue">
+          <b>BLUE</b><span id="tpBlue">0명</span>
+        </button>
+      </div>
+      <!-- 선택 사항: 셀카를 찍어 프로필 사진으로 쓴다 -->
+      <div class="selfie-row">
+        <img id="selfiePreview" class="selfie-preview" alt="" hidden />
+        <button type="button" class="selfie-btn" id="selfieBtn">📸 셀카로 프로필 만들기</button>
+      </div>
+
+      <button type="button" class="teampick-skip" id="teamPickSkip">자동 배정으로 시작</button>
+    </div>
+  </div>
+
+  <input id="selfieInput" type="file" accept="image/*" capture="user" hidden />
+</main>
+
+<footer class="inputbar">
+  <button class="me" id="meBtn" type="button" title="닉네임 변경 / 팀 이동">
+    <span class="me-dot"></span>
+    <span class="me-nick" id="meNick">연결 중…</span>
+    <span class="me-score" id="meScore">0</span>
+  </button>
+
+  <!-- 한컴타자식 실시간 지표 -->
+  <div class="gauges">
+    <div class="gauge">
+      <b id="myCpm">0</b>
+      <span>타/분</span>
+    </div>
+    <div class="gauge">
+      <b id="myAcc">100</b>
+      <span>정확도 %</span>
+    </div>
+  </div>
+
+  <input
+    id="input"
+    type="text"
+    enterkeyhint="send"
+    autocomplete="off"
+    autocorrect="off"
+    autocapitalize="off"
+    spellcheck="false"
+    placeholder="떨어지는 단어를 입력하고 Enter" />
+</footer>
+
+<!-- 내 정보 편집 -->
+<div class="modal" id="modal" hidden>
+  <div class="modal-box">
+    <h3>내 정보</h3>
+    <label for="nickInput">닉네임</label>
+    <input id="nickInput" type="text" maxlength="12" placeholder="최대 12자" />
+    <div class="modal-team">
+      <span>팀</span>
+      <button id="teamBtn" type="button">팀 바꾸기</button>
+    </div>
+    <div class="modal-team">
+      <span>프로필 사진</span>
+      <button id="photoBtn" type="button">셀카 찍기</button>
+    </div>
+    <div class="modal-actions">
+      <button id="modalCancel" type="button" class="ghost">닫기</button>
+      <button id="modalSave" type="button">저장</button>
+    </div>
+  </div>
+</div>
+
+<script src="/socket.io/socket.io.js"></script>
+<script src="/app.js"></script>
+</body>
+</html>

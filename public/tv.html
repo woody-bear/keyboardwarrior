@@ -1,0 +1,766 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Team Drop Words — TV 관전</title>
+<style>
+/*
+ * TV 전용 관전 화면.
+ * 아주 오래된 TV 브라우저에서도 깨지지 않도록 flexbox/grid/CSS 변수 없이
+ * 고정 위치(position)와 테이블 레이아웃만 쓴다. JS도 ES5만 쓴다.
+ */
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+html, body { width: 100%; height: 100%; overflow: hidden; }
+
+body {
+  background: #070a16;
+  color: #e8ecf8;
+  font-family: 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif;
+}
+
+/* ---------- 상단 점수판: 3칸 테이블 ---------- */
+#top {
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 75px;
+  display: table;
+  width: 100%;
+  table-layout: fixed;
+  background: #0b1020;
+  border-bottom: 2px solid #1c2748;
+}
+
+.cell { display: table-cell; vertical-align: middle; padding: 0 24px; }
+.cell.red { text-align: left; }
+.cell.mid { text-align: center; padding: 0; }
+.cell.blue { text-align: right; }
+
+.tname { font-size: 20px; font-weight: 800; letter-spacing: 2px; }
+.cell.red .tname { color: #ff4d6d; }
+.cell.blue .tname { color: #4d9dff; }
+
+.tscore { font-size: 32px; font-weight: 800; margin: 0 12px; }
+.tcount { font-size: 15px; color: #8f9bbd; }
+.tname, .tscore, .tcount { display: inline-block; vertical-align: middle; }
+
+#timer { font-size: 26px; font-weight: 800; letter-spacing: 1px; }
+#timer.urgent { color: #ff4d6d; }
+#lives { margin-top: 2px; height: 8px; font-size: 0; }
+#lives i {
+  display: inline-block; width: 14px; height: 6px; margin: 0 2px;
+  border-radius: 3px; background: #7cf5c4;
+}
+#lives i.lost { background: #2a3358; }
+#phase { margin-top: 3px; font-size: 14px; color: #8f9bbd; }
+#phase.typing { color: #ffd66b; font-weight: 800; }
+
+/* ---------- 프로필별 득점 비중 바 ---------- */
+#bars {
+  position: absolute;
+  top: 77px; left: 8px; right: 140px;   /* 우측 QR 미니 카드를 피한다 */
+  height: 38px;
+  z-index: 15;
+  font-size: 0;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.bar-seg {
+  display: inline-block;
+  vertical-align: top;
+  height: 32px;
+  line-height: 30px;
+  margin-right: 4px;
+  padding: 0 8px;
+  border-radius: 9px;
+  border: 1px solid #333;
+  overflow: hidden;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.bar-seg img {
+  width: 22px; height: 22px;
+  border-radius: 50%;
+  vertical-align: middle;
+  margin-right: 6px;
+}
+
+.bar-seg .bs-score { font-weight: 800; margin-left: 8px; }
+
+/* ---------- 본문: 보드 전체 확장 + QR/순위는 우측 상단에 띄운다 ---------- */
+/*
+ * canvas는 교체 요소라 absolute + left/right 로는 크기가 늘어나지 않는다
+ * (고유 크기 300x150 유지). 일반 div(#stage)를 늘리고 그 안에서 100%로 채운다.
+ */
+#stage {
+  position: absolute;
+  top: 75px; left: 0; right: 0; bottom: 0;
+}
+
+#cv { width: 100%; height: 100%; display: block; }
+
+/* QR 카드 — 우측 상단 구석의 미니 카드. 대기 오버레이보다 항상 위 */
+#qrcard {
+  position: absolute;
+  top: 83px; right: 8px;
+  width: 118px;
+  z-index: 30;
+  text-align: center;
+  padding: 7px 6px;
+  border: 1px solid #1c2748;
+  border-radius: 10px;
+  background: #101731;
+}
+
+#joinurl { font-size: 14px; font-weight: 800; color: #7cf5c4; margin-bottom: 5px; }
+#qr { width: 92px; height: 92px; background: #fff; border-radius: 6px; padding: 3px; }
+#qrcard p { display: none; }
+
+/* 실시간 순위 — QR 아래, 반투명 */
+#rank {
+  position: absolute;
+  top: 225px; right: 8px;
+  width: 240px;
+  max-height: 55%;
+  z-index: 25;
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: rgba(11, 16, 32, 0.88);
+  overflow: hidden;
+}
+#rank h2 { font-size: 18px; color: #8f9bbd; font-weight: 700; margin-bottom: 8px; }
+
+#rankList { list-style: none; }
+#rankList li {
+  padding: 9px 12px; margin-bottom: 6px;
+  border-radius: 10px; background: #101731;
+  font-size: 24px;
+  overflow: hidden;
+  white-space: nowrap;
+}
+#rankList li .no { display: inline-block; width: 38px; color: #8f9bbd; font-weight: 700; }
+#rankList li .pts { float: right; font-weight: 800; margin-left: 10px; }
+#rankList li.red .nick { color: #ff8ea3; }
+#rankList li.blue .nick { color: #8ec2ff; }
+
+/* ---------- 오버레이 (대기 / 결과): 테이블 가운데 정렬 ---------- */
+/* 점수판과 QR 카드는 가리지 않고 게임 보드 영역만 덮는다 */
+#overlay {
+  position: absolute;
+  left: 0; top: 75px; right: 0; bottom: 0;
+  z-index: 20;
+  background: rgba(4, 6, 14, 0.85);
+}
+#overlay.hide { display: none; }
+
+#otable { display: table; width: 100%; height: 100%; }
+#ocell { display: table-cell; vertical-align: middle; text-align: center; }
+
+#otitle { font-size: 72px; font-weight: 800; }
+#otitle.red { color: #ff4d6d; }
+#otitle.blue { color: #4d9dff; }
+#osub { margin-top: 16px; font-size: 32px; color: #8f9bbd; }
+#ocount { margin-top: 26px; font-size: 28px; color: #7cf5c4; }
+
+#oresult { margin-top: 32px; }
+#oresult table { margin: 0 auto; border-collapse: collapse; font-size: 28px; }
+#oresult td, #oresult th { padding: 8px 22px; text-align: center; }
+#oresult th { color: #8f9bbd; font-weight: 700; font-size: 22px; }
+#oresult td.nick { text-align: left; }
+#oresult tr.red td.nick { color: #ff8ea3; }
+#oresult tr.blue td.nick { color: #8ec2ff; }
+</style>
+</head>
+<body>
+
+<div id="top">
+  <div class="cell red">
+    <span class="tname">RED</span>
+    <span class="tscore" id="sRed">0</span>
+    <span class="tcount" id="cRed">0명</span>
+  </div>
+  <div class="cell mid">
+    <div id="timer">--:--</div>
+    <div id="lives"></div>
+    <div id="phase">연결 중…</div>
+  </div>
+  <div class="cell blue">
+    <span class="tcount" id="cBlue">0명</span>
+    <span class="tscore" id="sBlue">0</span>
+    <span class="tname">BLUE</span>
+  </div>
+</div>
+
+<div id="stage"><canvas id="cv"></canvas></div>
+
+<div id="bars"></div>
+
+<div id="qrcard">
+  <div id="joinurl">불러오는 중…</div>
+  <img id="qr" alt="참여 QR" />
+  <p>휴대폰으로 QR을 스캔해 참여하세요</p>
+</div>
+
+<div id="rank">
+  <h2>실시간 순위</h2>
+  <ol id="rankList"></ol>
+</div>
+
+<div id="overlay">
+  <div id="otable">
+  <div id="ocell">
+    <div id="otitle">연결 중…</div>
+    <div id="osub">잠시만 기다려 주세요</div>
+    <div id="oresult"></div>
+    <div id="ocount"></div>
+  </div>
+  </div>
+</div>
+
+<script src="/socket.io/socket.io.js"></script>
+<script>
+/* TV 관전 클라이언트 — 구형 TV 브라우저 호환을 위해 ES5 문법만 쓴다. */
+(function () {
+  'use strict';
+
+  var socket = io({ query: { spectate: '1' }, transports: ['websocket', 'polling'] });
+
+  var TEAM_COLOR = { red: '#ff4d6d', blue: '#4d9dff' };
+  var TEAM_LABEL = { red: 'RED', blue: 'BLUE' };
+
+  function $(id) { return document.getElementById(id); }
+
+  // requestAnimationFrame이 없는 아주 오래된 엔진 대비
+  var raf = window.requestAnimationFrame
+    || window.webkitRequestAnimationFrame
+    || function (fn) { window.setTimeout(fn, 33); };
+
+  /* ------------------------------- 효과음 ------------------------------- */
+
+  // 구형 webkit(Web Audio 초기 스펙)까지 지원하는 합성음. 실패해도 게임은 계속된다.
+  var AC = window.AudioContext || window.webkitAudioContext;
+  var actx = null;
+  var lastSoundAt = 0;
+
+  function audioCtx() {
+    if (!AC) return null;
+    if (!actx) { try { actx = new AC(); } catch (e) { return null; } }
+    if (actx.resume && actx.state === 'suspended') actx.resume();
+    return actx;
+  }
+
+  function tone(type, from, to, dur, delay, vol) {
+    var ctx = audioCtx();
+    if (!ctx) return;
+    try {
+      var t0 = ctx.currentTime + (delay || 0);
+      var osc = ctx.createOscillator();
+      var gain = ctx.createGain ? ctx.createGain() : ctx.createGainNode();
+      try { osc.type = type; } catch (e) { /* 구형은 숫자 enum — 기본 sine으로 둔다 */ }
+      osc.frequency.setValueAtTime(from, t0);
+      if (osc.frequency.exponentialRampToValueAtTime) {
+        osc.frequency.exponentialRampToValueAtTime(Math.max(to, 1), t0 + dur);
+      }
+      gain.gain.setValueAtTime(vol, t0);
+      if (gain.gain.exponentialRampToValueAtTime) {
+        gain.gain.exponentialRampToValueAtTime(0.001, t0 + dur);
+      }
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      if (osc.start) { osc.start(t0); osc.stop(t0 + dur + 0.02); }
+      else { osc.noteOn(t0); osc.noteOff(t0 + dur + 0.02); }
+    } catch (e) { /* 소리를 못 내는 TV여도 무시 */ }
+  }
+
+  var SOUNDS = [
+    function () { tone('sine', 700, 220, 0.12, 0, 0.2); },
+    function () { tone('triangle', 880, 870, 0.16, 0, 0.16); tone('triangle', 1320, 1310, 0.2, 0.05, 0.1); },
+    function () { tone('sawtooth', 1300, 90, 0.13, 0, 0.1); },
+    function () { tone('square', 523, 520, 0.07, 0, 0.09); tone('square', 784, 780, 0.1, 0.06, 0.09); },
+    function () { tone('sine', 300, 900, 0.1, 0, 0.16); },
+  ];
+
+  function playHit(bonus) {
+    var now = Date.now();
+    if (now - lastSoundAt < 70) return;
+    lastSoundAt = now;
+    SOUNDS[Math.floor(Math.random() * SOUNDS.length)]();
+    if (bonus) tone('triangle', 660, 1760, 0.28, 0.02, 0.13);
+  }
+
+  var canvas = $('cv');
+  var ctx = canvas.getContext('2d');
+
+  var snap = { phase: 'waiting', words: [], scores: { red: 0, blue: 0 }, lives: 10, maxLives: 10, playerCount: 0, remainMs: 0, restartInMs: 0 };
+  var rendered = {};        // wordId -> {text,x,y,tx,ty}
+  var effects = [];
+
+  /* ------------------------------ 세션 / QR ------------------------------ */
+
+  function applySession(data) {
+    if (!data) return;
+    if (data.qrDataUrl) $('qr').src = data.qrDataUrl;
+    if (data.joinUrl) $('joinurl').textContent = data.joinUrl.replace(/^https?:\/\//, '');
+  }
+
+  socket.on('welcome', function (data) {
+    applySession(data);
+    if (data.photos) {
+      for (var id in data.photos) photos[id] = data.photos[id];
+    }
+    if (data.state) { snap = data.state; paintHud(); }
+    if (data.lastResult) showResult(data.lastResult);
+  });
+
+  /* ------------------------ 프로필 사진 / 득점 바 ------------------------ */
+
+  var photos = {};          // playerId -> dataURL
+  var lastRoster = null;
+
+  socket.on('profile:photo', function (d) {
+    photos[d.id] = d.photo;
+    renderBars();
+  });
+
+  var TEAM_BG = { red: 'rgba(255,77,109,0.16)', blue: 'rgba(77,157,255,0.16)' };
+  var TEAM_BORDER = { red: 'rgba(255,77,109,0.5)', blue: 'rgba(77,157,255,0.5)' };
+
+  /** 상단 득점 바 — 플레이어별 점수 비중을 폭으로 보여준다. */
+  function renderBars() {
+    var el = $('bars');
+    el.innerHTML = '';
+    if (!lastRoster) return;
+
+    var players = lastRoster.players.slice(0, 8);
+    var total = 0;
+    var i;
+    for (i = 0; i < players.length; i += 1) total += players[i].score + 1;
+    if (!total) return;
+
+    // 최소폭(6%)을 보장하되 합계가 100%를 넘지 않게 전체를 다시 정규화한다.
+    var raw = [];
+    var rawSum = 0;
+    for (i = 0; i < players.length; i += 1) {
+      var pct = Math.max(((players[i].score + 1) / total) * 100, 6);
+      raw.push(pct);
+      rawSum += pct;
+    }
+
+    for (var j = 0; j < players.length; j += 1) {
+      var p = players[j];
+      var seg = document.createElement('span');
+      seg.className = 'bar-seg';
+      seg.setAttribute('data-pid', p.id);
+      seg.style.width = ((raw[j] / rawSum) * 100 - 0.6) + '%';
+      seg.style.background = TEAM_BG[p.team] || TEAM_BG.red;
+      seg.style.borderColor = TEAM_BORDER[p.team] || TEAM_BORDER.red;
+
+      if (photos[p.id]) {
+        var img = document.createElement('img');
+        img.src = photos[p.id];
+        seg.appendChild(img);
+      }
+
+      var nick = document.createTextNode(p.nick);
+      seg.appendChild(nick);
+
+      var score = document.createElement('span');
+      score.className = 'bs-score';
+      score.textContent = p.score;
+      seg.appendChild(score);
+
+      el.appendChild(seg);
+    }
+  }
+
+  socket.on('session', applySession);
+
+  /* ------------------------------ 상태 갱신 ------------------------------ */
+
+  socket.on('state', function (s) {
+    snap = s;
+    syncWords(s.words);
+    paintHud();
+  });
+
+  socket.on('roster', function (data) {
+    lastRoster = data;
+    renderBars();
+    $('cRed').textContent = data.counts.red + '명';
+    $('cBlue').textContent = data.counts.blue + '명';
+
+    var list = $('rankList');
+    list.innerHTML = '';
+    var players = data.players.slice(0, 10);
+    for (var i = 0; i < players.length; i += 1) {
+      var p = players[i];
+      var li = document.createElement('li');
+      li.className = p.team;
+      li.innerHTML = '<span class="pts"></span><span class="no"></span><span class="nick"></span>';
+      li.getElementsByClassName('no')[0].textContent = (i + 1);
+      li.getElementsByClassName('nick')[0].textContent = p.nick;
+      li.getElementsByClassName('pts')[0].textContent = p.score;
+      list.appendChild(li);
+    }
+  });
+
+  /** 파괴 연출 묶음 — 링 + 점수 팝업 + 효과음 */
+  function burstAt(x, y, hit) {
+    effects.push({ kind: 'ring', x: x, y: y, color: TEAM_COLOR[hit.team] || '#7cf5c4', t: 0, life: 24 });
+    if (hit.bonus) effects.push({ kind: 'ring', x: x, y: y, color: '#ff4df0', t: 0, life: 30 });
+    effects.push({
+      kind: 'score', x: x, y: y,
+      color: hit.bonus ? '#ff8df5' : (TEAM_COLOR[hit.team] || '#7cf5c4'),
+      // 뒤늦은 타격(echo)은 점수가 없으므로 득점 대신 타격 표시만 띄운다.
+      label: hit.echo ? '타격!' : '+' + hit.gain + (hit.bonus ? ' ×2' : ''),
+      sub: hit.by, t: 0, life: 50,
+    });
+    playHit(hit.bonus);
+    if (effects.length > 200) effects.splice(0, effects.length - 200);
+  }
+
+  var photoImgs = {};   // playerId -> Image
+
+  function photoImg(id) {
+    var dataUrl = photos[id];
+    if (!dataUrl) return null;
+    var img = photoImgs[id];
+    if (img && img.__src === dataUrl) return img;
+    img = new Image();
+    img.src = dataUrl;
+    img.__src = dataUrl;
+    photoImgs[id] = img;
+    return img;
+  }
+
+  /** 아바타 출발점: 상단 득점 바의 내 칸. 없으면 상단 중앙. */
+  function flyStart(pid) {
+    var rect = canvas.getBoundingClientRect();
+    var el = document.querySelector('#bars span[data-pid="' + pid + '"]');
+    if (el) {
+      var r = el.getBoundingClientRect();
+      return {
+        x: (r.left + r.width / 2 - rect.left) / rect.width,
+        y: (r.top + r.height / 2 - rect.top) / rect.height,
+      };
+    }
+    return { x: 0.5, y: -0.04 };
+  }
+
+  socket.on('word:hit', function (hit) {
+    var w = rendered[hit.id];
+    var x = w ? w.x : hit.x;
+    var y = w ? w.y1 : hit.y;
+    delete rendered[hit.id];
+
+    // 셀카 프로필이 있으면 아바타가 단어까지 날아간 뒤 터진다.
+    var img = hit.playerId ? photoImg(hit.playerId) : null;
+    if (img && img.complete && img.naturalWidth) {
+      var start = flyStart(hit.playerId);
+      effects.push({ kind: 'fly', img: img, hit: hit, x: start.x, y: start.y, tx: x, ty: y, t: 0, life: 14 });
+    } else {
+      burstAt(x, y, hit);
+    }
+  });
+
+  socket.on('word:dropped', function (info) {
+    delete rendered[info.id];
+    effects.push({ kind: 'drop', x: info.x, y: 1, text: info.text, t: 0, life: 36 });
+  });
+
+  socket.on('round:start', function () {
+    hideOverlay();
+    effects.length = 0;
+  });
+
+  socket.on('round:over', function (result) { showResult(result); });
+
+  socket.on('connect', function () { $('phase').textContent = '연결됨'; });
+  socket.on('disconnect', function () {
+    $('phase').textContent = '연결 끊김';
+    showOverlay('연결 끊김', '서버와 다시 연결하는 중…');
+  });
+
+  /* -------------------------------- HUD -------------------------------- */
+
+  function pad2(n) { return (n < 10 ? '0' : '') + n; }
+
+  function paintHud() {
+    $('sRed').textContent = snap.scores.red;
+    $('sBlue').textContent = snap.scores.blue;
+
+    var lives = $('lives');
+    if (lives.children.length !== snap.maxLives) {
+      var html = '';
+      for (var i = 0; i < snap.maxLives; i += 1) html += '<i></i>';
+      lives.innerHTML = html;
+    }
+    for (var j = 0; j < lives.children.length; j += 1) {
+      lives.children[j].className = j >= snap.lives ? 'lost' : '';
+    }
+
+    var timer = $('timer');
+    if (snap.phase === 'playing') {
+      var sec = Math.ceil(snap.remainMs / 1000);
+      timer.textContent = pad2(Math.floor(sec / 60)) + ':' + pad2(sec % 60);
+      timer.className = sec <= 15 ? 'urgent' : '';
+    } else {
+      timer.textContent = '--:--';
+      timer.className = '';
+    }
+
+    if (snap.phase === 'playing') {
+      // 타이핑 타임(10초)에는 관전 화면에도 강조해 보여준다.
+      if (snap.mode === 'typing' && snap.modeRemainMs > 0) {
+        $('phase').textContent = '⌨️ 타이핑 타임! ' + Math.ceil(snap.modeRemainMs / 1000) + '초';
+        $('phase').className = 'typing';
+      } else {
+        $('phase').textContent = snap.playerCount + '명 대결 중';
+        $('phase').className = '';
+      }
+      hideOverlay();
+    } else if (snap.phase === 'waiting') {
+      $('phase').textContent = '대기 중';
+      $('phase').className = '';
+      showOverlay('참가자를 기다리는 중', '휴대폰으로 QR을 스캔하면 바로 시작됩니다');
+    } else if (snap.phase === 'over') {
+      $('phase').textContent = '라운드 종료';
+      $('phase').className = '';
+      $('ocount').textContent = '휴대폰에서 「다시 시작」을 누르면 다음 판이 시작됩니다';
+    }
+  }
+
+  /* ------------------------------ 오버레이 ------------------------------ */
+
+  function showOverlay(title, sub) {
+    $('otitle').textContent = title;
+    $('otitle').className = '';
+    $('osub').textContent = sub;
+    $('oresult').innerHTML = '';
+    $('ocount').textContent = '';
+    $('overlay').className = '';
+  }
+
+  function hideOverlay() { $('overlay').className = 'hide'; }
+
+  function showResult(result) {
+    var title = result.winner === 'draw' ? '무승부!' : TEAM_LABEL[result.winner] + ' 팀 승리!';
+    $('otitle').textContent = title;
+    $('otitle').className = result.winner === 'draw' ? '' : result.winner;
+    $('osub').textContent =
+      (result.reason === 'time' ? '시간 종료' : '목숨 소진')
+      + ' · RED ' + result.scores.red + ' : ' + result.scores.blue + ' BLUE';
+
+    var html = '<table><tr><th>순위</th><th>닉네임</th><th>타/분</th><th>맞힘</th><th>점수</th></tr>';
+    var top = result.ranking.slice(0, 8);
+    for (var i = 0; i < top.length; i += 1) {
+      var p = top[i];
+      html += '<tr class="' + p.team + '">'
+        + '<td>' + (i + 1) + '</td>'
+        + '<td class="nick">' + escapeHtml(p.nick) + (i === 0 && p.score > 0 ? ' · MVP' : '') + '</td>'
+        + '<td>' + (p.cpm || 0) + '</td>'
+        + '<td>' + p.hits + '</td>'
+        + '<td>' + p.score + '</td>'
+        + '</tr>';
+    }
+    html += '</table>';
+    $('oresult').innerHTML = html;
+    $('ocount').textContent = '';
+    $('overlay').className = '';
+  }
+
+  function escapeHtml(s) {
+    return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  }
+
+  /* ------------------------------ 렌더링 ------------------------------ */
+
+  function resize() {
+    var w = canvas.clientWidth;
+    var h = canvas.clientHeight;
+    if (w > 0 && h > 0 && (canvas.width !== w || canvas.height !== h)) {
+      canvas.width = w;
+      canvas.height = h;
+    }
+  }
+  window.addEventListener('resize', resize);
+
+  /*
+   * 서버는 20Hz로 좌표를 보낸다. 매 프레임 목표점으로 당기는 방식은
+   * 스냅샷 사이에서 가다 서다를 반복하므로, 최근 두 스냅샷 사이를
+   * 시간 기준으로 선형 보간해 등속으로 미끄러지듯 내려오게 한다.
+   */
+  function syncWords(words) {
+    var now = Date.now();
+    var alive = {};
+    for (var i = 0; i < words.length; i += 1) {
+      var wd = words[i];                     // [id, text, x, y]
+      alive[wd[0]] = true;
+      var cur = rendered[wd[0]];
+      if (cur) {
+        cur.t0 = cur.t1; cur.y0 = cur.y1;
+        cur.t1 = now; cur.y1 = wd[3];
+        cur.x = wd[2];
+      } else {
+        rendered[wd[0]] = {
+          text: wd[1], x: wd[2],
+          y0: wd[3], y1: wd[3], t0: now - 50, t1: now,
+          custom: !!wd[4], bonus: !!wd[5],
+        };
+      }
+    }
+    for (var id in rendered) {
+      if (!alive[id]) delete rendered[id];
+    }
+  }
+
+  /** 120ms 과거 시점을 그려서 다음 스냅샷이 늦어도 튀지 않게 한다. */
+  function wordY(word, renderAt) {
+    if (word.t1 <= word.t0) return word.y1;
+    var f = (renderAt - word.t0) / (word.t1 - word.t0);
+    if (f < 0) f = 0;
+    if (f > 2) f = 2;                        // 스냅샷이 끊겨도 과하게 앞서가지 않도록
+    return word.y0 + (word.y1 - word.y0) * f;
+  }
+
+  function draw() {
+    resize();
+    var w = canvas.width;
+    var h = canvas.height;
+    ctx.clearRect(0, 0, w, h);
+
+    // 바닥 경고선
+    ctx.strokeStyle = 'rgba(255,77,109,0.4)';
+    ctx.beginPath();
+    ctx.moveTo(0, h - 2);
+    ctx.lineTo(w, h - 2);
+    ctx.stroke();
+
+    var fontSize = Math.max(14, Math.min(24, w / 53));   // 기존 대비 60% 크기
+    ctx.font = '600 ' + fontSize + "px 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif";
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+
+    var renderAt = Date.now() - 120;
+    for (var id in rendered) {
+      var word = rendered[id];
+      var y = wordY(word, renderAt);
+
+      var boxW = ctx.measureText(word.text).width + fontSize * 1.4;
+      var boxH = fontSize * 1.9;
+      var px = Math.min(Math.max(word.x * w, boxW / 2 + 4), w - boxW / 2 - 4);
+      var py = y * h;
+      var danger = Math.max(0, (y - 0.65) / 0.35);
+
+      if (word.custom) {
+        // 직접 추가한 단어 — 금빛 강조
+        ctx.fillStyle = 'rgba(62, 47, 12, 0.92)';
+        ctx.fillRect(px - boxW / 2, py - boxH / 2, boxW, boxH);
+        ctx.lineWidth = 2;
+        ctx.strokeStyle = '#ffd66b';
+        ctx.strokeRect(px - boxW / 2, py - boxH / 2, boxW, boxH);
+        ctx.lineWidth = 1;
+        ctx.fillStyle = '#ffe9ad';
+      } else if (word.bonus) {
+        // 점수 2배 — 네온 마젠타 강조 + ×2 배지
+        ctx.fillStyle = 'rgba(32, 12, 46, 0.93)';
+        ctx.fillRect(px - boxW / 2, py - boxH / 2, boxW, boxH);
+        ctx.lineWidth = 2;
+        ctx.strokeStyle = (Math.floor(Date.now() / 300) % 2) ? '#ff4df0' : '#4dfff0';
+        ctx.strokeRect(px - boxW / 2, py - boxH / 2, boxW, boxH);
+        ctx.lineWidth = 1;
+
+        var mainFont = ctx.font;
+        ctx.font = '800 ' + Math.round(fontSize * 0.6) + 'px sans-serif';
+        ctx.fillStyle = '#ff8df5';
+        ctx.fillText('×2', px + boxW / 2, py - boxH / 2 - fontSize * 0.3);
+        ctx.font = mainFont;
+
+        ctx.fillStyle = '#ffd9fb';
+      } else {
+        ctx.fillStyle = 'rgba(' + Math.round(20 + danger * 80) + ',' + Math.round(28 - danger * 10) + ',' + Math.round(54 - danger * 20) + ',0.92)';
+        ctx.fillRect(px - boxW / 2, py - boxH / 2, boxW, boxH);
+        ctx.strokeStyle = 'rgba(' + Math.round(90 + danger * 165) + ',' + Math.round(110 - danger * 40) + ',' + Math.round(170 - danger * 60) + ',0.9)';
+        ctx.strokeRect(px - boxW / 2, py - boxH / 2, boxW, boxH);
+        ctx.fillStyle = '#e8ecf8';
+      }
+      ctx.fillText(word.text, px, py + 1);
+    }
+
+    drawEffects(w, h, fontSize);
+    raf(draw);
+  }
+
+  function drawEffects(w, h, fontSize) {
+    for (var i = effects.length - 1; i >= 0; i -= 1) {
+      var fx = effects[i];
+      fx.t += 1;
+      if (fx.t > fx.life) {
+        effects.splice(i, 1);
+        // 아바타가 단어에 도착하는 순간 폭발한다.
+        if (fx.kind === 'fly') burstAt(fx.tx, fx.ty, fx.hit);
+        continue;
+      }
+
+      var p = fx.t / fx.life;
+      var fade = 1 - p * p;
+      var px = fx.x * w;
+      var py = fx.y * h;
+
+      if (fx.kind === 'ring') {
+        ctx.globalAlpha = fade * 0.8;
+        ctx.strokeStyle = fx.color;
+        ctx.lineWidth = Math.max(1, 4 * (1 - p));
+        ctx.beginPath();
+        ctx.arc(px, py, fontSize * (0.6 + 3 * p), 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.lineWidth = 1;
+      } else if (fx.kind === 'score') {
+        ctx.globalAlpha = fade;
+        ctx.fillStyle = fx.color;
+        ctx.font = '800 ' + fontSize + 'px sans-serif';
+        ctx.fillText(fx.label, px, py - 14 - p * 46);
+        ctx.fillStyle = 'rgba(232,236,248,0.85)';
+        ctx.font = '600 ' + Math.round(fontSize * 0.55) + 'px sans-serif';
+        ctx.fillText(fx.sub, px, py - 14 - p * 46 + fontSize * 0.9);
+      } else if (fx.kind === 'fly') {
+        // 셀카 아바타가 포물선을 그리며 단어로 날아간다.
+        var ease = p * p * (3 - 2 * p);
+        var cx = (fx.x + (fx.tx - fx.x) * ease) * w;
+        var cy = (fx.y + (fx.ty - fx.y) * ease - Math.sin(p * Math.PI) * 0.05) * h;
+        var avSize = fontSize * 1.5;
+
+        ctx.globalAlpha = 1;
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(cx, cy, avSize, 0, Math.PI * 2);
+        ctx.clip();
+        try { ctx.drawImage(fx.img, cx - avSize, cy - avSize, avSize * 2, avSize * 2); } catch (e) { /* 이미지 오류 무시 */ }
+        ctx.restore();
+
+        ctx.lineWidth = 2;
+        ctx.strokeStyle = TEAM_COLOR[fx.hit.team] || '#7cf5c4';
+        ctx.beginPath();
+        ctx.arc(cx, cy, avSize, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.lineWidth = 1;
+      } else if (fx.kind === 'drop') {
+        ctx.globalAlpha = fade;
+        ctx.fillStyle = '#ff4d6d';
+        ctx.font = '700 ' + fontSize + 'px sans-serif';
+        ctx.fillText('✕ ' + fx.text, px, py - 20 - p * 14);
+      }
+
+      ctx.globalAlpha = 1;
+    }
+  }
+
+  resize();
+  raf(draw);
+}());
+</script>
+</body>
+</html>
